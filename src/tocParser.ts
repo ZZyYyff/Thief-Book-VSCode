@@ -22,6 +22,20 @@ export function offsetToPage(offset: number, pageSize: number): number {
 }
 
 /**
+ * 根据当前阅读位置（页首字符偏移）找到应定位的目录项下标
+ * 规则：取最后一个 offset 不超过 startChar 的章节；无匹配时返回 0
+ */
+export function findActiveTocIndex(entries: TocEntry[], startChar: number): number {
+    let index = 0;
+    for (let i = 0; i < entries.length; i++) {
+        if (entries[i].offset <= startChar) {
+            index = i;
+        }
+    }
+    return index;
+}
+
+/**
  * 解析 TXT 文本中的章节目录
  * @param rawText 原始文本（保留换行结构，与页面显示用的压缩文本同源）
  * @param isEnglish 是否英文书

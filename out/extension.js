@@ -14,6 +14,7 @@ exports.deactivate = exports.activate = void 0;
 // Import the module and reference it with the alias vscode in your code below
 const vscode_1 = require("vscode");
 const book = require("./bookUtil");
+const tocParser_1 = require("./tocParser");
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 function activate(context) {
@@ -87,14 +88,23 @@ function activate(context) {
                 description: `第${Math.floor(entry.offset / books.page_size) + 1}页`,
                 offset: entry.offset
             }));
-            const picked = yield vscode_1.window.showQuickPick(items, {
-                placeHolder: "选择章节 & Select chapter"
-            });
-            if (!picked) {
-                return;
-            }
-            const content = yield books.jumpToOffset(picked.offset);
-            vscode_1.window.setStatusBarMessage(content);
+            // 定位到当前阅读所在章节
+            const currPage = vscode_1.workspace.getConfiguration().get('thiefBook.currPageNumber', 1);
+            const startChar = (currPage - 1) * books.page_size;
+            const activeIndex = tocParser_1.findActiveTocIndex(toc, startChar);
+            const quickPick = vscode_1.window.createQuickPick();
+            quickPick.placeholder = "选择章节 & Select chapter";
+            quickPick.items = items;
+            quickPick.activeItems = [items[activeIndex]];
+            quickPick.onDidChangeSelection((selected) => __awaiter(this, void 0, void 0, function* () {
+                if (selected.length) {
+                    quickPick.hide();
+                    const content = yield books.jumpToOffset(selected[0].offset);
+                    vscode_1.window.setStatusBarMessage(content);
+                }
+            }));
+            quickPick.onDidHide(() => quickPick.dispose());
+            quickPick.show();
         }
         catch (error) {
             vscode_1.window.showErrorMessage(`读取失败: ${error}`);

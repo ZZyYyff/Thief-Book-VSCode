@@ -12,7 +12,7 @@ function test(name, fn) {
 }
 
 async function run() {
-    const { parseTxtToc, offsetToPage } = require('../out/tocParser.js');
+    const { parseTxtToc, offsetToPage, findActiveTocIndex } = require('../out/tocParser.js');
     const { EpubParser } = require('../out/epubUtil.js');
 
     // ---------- TXT 目录解析 ----------
@@ -106,6 +106,24 @@ async function run() {
         assert.strictEqual(offsetToPage(50, 50), 2);
         assert.strictEqual(offsetToPage(249, 50), 5);
         assert.strictEqual(offsetToPage(250, 50), 6);
+    });
+
+    await test('findActiveTocIndex：定位当前阅读所在章节', () => {
+        const toc = [
+            { title: '第一章', offset: 0 },
+            { title: '第二章', offset: 50 },
+            { title: '第三章', offset: 100 },
+        ];
+        // pageSize=50：第1页起始 0 → 第一章
+        assert.strictEqual(findActiveTocIndex(toc, 0), 0);
+        // 第2页起始 50 → 第二章（等于章节 offset 归该章）
+        assert.strictEqual(findActiveTocIndex(toc, 50), 1);
+        // 章间 75 → 仍是第二章
+        assert.strictEqual(findActiveTocIndex(toc, 75), 1);
+        // 最后一章之后 150 → 最后一项
+        assert.strictEqual(findActiveTocIndex(toc, 150), 2);
+        // 空目录安全返回 0
+        assert.strictEqual(findActiveTocIndex([], 0), 0);
     });
 
     // ---------- 汇总 ----------
