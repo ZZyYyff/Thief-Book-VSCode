@@ -70,6 +70,10 @@
 			{
 				"command": "extension.getJumpingPage",
 				"title": "thief-book.JumpingBook"
+			},
+			{
+				"command": "extension.showToc",
+				"title": "thief-book.ShowToc"
 			}
 		],
 		"keybindings": [

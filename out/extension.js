@@ -73,10 +73,38 @@ function activate(context) {
             vscode_1.window.showErrorMessage(`读取失败: ${error}`);
         }
     }));
+    // 查看目录
+    let showToc = vscode_1.commands.registerCommand('extension.showToc', () => __awaiter(this, void 0, void 0, function* () {
+        try {
+            let books = new book.Book(context);
+            const toc = yield books.getToc();
+            if (!toc.length) {
+                vscode_1.window.showWarningMessage("未识别到章节目录 & No chapters found");
+                return;
+            }
+            const items = toc.map(entry => ({
+                label: entry.title,
+                description: `第${Math.floor(entry.offset / books.page_size) + 1}页`,
+                offset: entry.offset
+            }));
+            const picked = yield vscode_1.window.showQuickPick(items, {
+                placeHolder: "选择章节 & Select chapter"
+            });
+            if (!picked) {
+                return;
+            }
+            const content = yield books.jumpToOffset(picked.offset);
+            vscode_1.window.setStatusBarMessage(content);
+        }
+        catch (error) {
+            vscode_1.window.showErrorMessage(`读取失败: ${error}`);
+        }
+    }));
     context.subscriptions.push(displayCode);
     context.subscriptions.push(getNextPage);
     context.subscriptions.push(getPreviousPage);
     context.subscriptions.push(getJumpingPage);
+    context.subscriptions.push(showToc);
 }
 exports.activate = activate;
 // this method is called when your extension is deactivated

@@ -3,6 +3,7 @@ import * as path from "path";
 import * as JSZip from "jszip";
 import * as xmldom from "xmldom";
 import * as xpath from "xpath";
+import { TocEntry } from "./tocParser";
 
 const DOMParser = xmldom.DOMParser;
 
@@ -16,6 +17,7 @@ export class EpubParser {
     private opfContent: string = "";
     private spineItems: string[] = [];
     private textContent: string = "";
+    private tocEntries: TocEntry[] = [];
 
     constructor(epubPath: string) {
         this.epubPath = epubPath;
@@ -118,10 +120,12 @@ export class EpubParser {
     }
 
     /**
-     * 提取所有章节的文本内容
+     * 提取所有章节的文本内容（同时记录各章标题与偏移，供目录使用）
      */
     private async extractAllText(): Promise<string> {
         const allText: string[] = [];
+        let offset = 0;
+        this.tocEntries = [];
 
         for (const itemPath of this.spineItems) {
             try {
@@ -132,7 +136,10 @@ export class EpubParser {
                         if (htmlContent) {
                             const text = this.extractTextFromHtml(htmlContent);
                             if (text.trim()) {
+                                const title = this.extractChapterTitle(htmlContent) || `章节 ${this.tocEntries.length + 1}`;
+                                this.tocEntries.push({ title, offset });
                                 allText.push(text);
+                                offset += text.length + 1; // join(" ") 连接各章，占一个空格
                             }
                         }
                     }
@@ -144,6 +151,23 @@ export class EpubParser {
         }
 
         return allText.join(" ");
+    }
+
+    /**
+     * 从章节 HTML 中提取标题：<title> 优先，其次首个 <h1>~<h6>
+     */
+    private extractChapterTitle(html: string): string {
+        const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        const headingMatch = html.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i);
+        const raw = (titleMatch || headingMatch)?.[1] || "";
+        return this.extractTextFromHtml(raw) || "";
+    }
+
+    /**
+     * 获取目录（章节标题 + 在拼接全文中的字符偏移）
+     */
+    getToc(): TocEntry[] {
+        return this.tocEntries.slice();
     }
 
     /**

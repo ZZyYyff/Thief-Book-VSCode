@@ -2,6 +2,7 @@ import { ExtensionContext, workspace, window } from 'vscode';
 import * as fs from "fs";
 import * as path from "path";
 import { EpubParser } from './epubUtil';
+import { parseTxtToc, offsetToPage, TocEntry } from './tocParser';
 
 export class Book {
     curr_page_number: number = 1;
@@ -12,6 +13,8 @@ export class Book {
     filePath: string | undefined = "";
     extensionContext: ExtensionContext;
     private cachedText: string = ""; // 缓存解析后的文本
+    private rawText: string = ""; // TXT 原始文本（保留换行，供目录解析）
+    private epubParser: EpubParser | null = null; // 缓存的 EPUB 解析器（供目录读取）
     private fileType: 'txt' | 'epub' | null = null; // 文件类型
 
     constructor(extensionContext: ExtensionContext) {
@@ -100,9 +103,10 @@ export class Book {
         }
 
         var data = fs.readFileSync(this.filePath!, 'utf-8');
+        this.rawText = data.toString();
         var line_break = <string>workspace.getConfiguration().get('thiefBook.lineBreak');
 
-        return data.toString()
+        return this.rawText
             .replace(/\n/g, line_break)
             .replace(/\r/g, " ")
             .replace(/　　/g, " ")
@@ -126,6 +130,7 @@ export class Book {
 
             const parser = new EpubParser(this.filePath!);
             await parser.init();
+            this.epubParser = parser;
             const text = parser.getText();
             
             // 处理换行符
@@ -167,6 +172,8 @@ export class Book {
         // 文件类型改变时清除缓存
         if (this.filePath !== newFilePath || this.fileType !== newFileType) {
             this.cachedText = "";
+            this.rawText = "";
+            this.epubParser = null;
         }
 
         this.filePath = newFilePath;
@@ -228,6 +235,55 @@ export class Book {
 
         this.getSize(text);
         this.getPage("curr");
+        this.getStartEnd();
+
+        var page_info = this.curr_page_number.toString() + "/" + this.page.toString();
+
+        this.updatePage();
+
+        return text.substring(this.start, this.end) + "    " + page_info;
+    }
+
+    /**
+     * 获取目录（章节标题 + 偏移），TXT 与 EPUB 统一返回结构
+     */
+    async getToc(): Promise<TocEntry[]> {
+        this.init();
+
+        if (!this.filePath) {
+            return [];
+        }
+
+        let text = await this.readFile();
+        if (!text) {
+            return [];
+        }
+
+        if (this.fileType === 'epub') {
+            return this.epubParser ? this.epubParser.getToc() : [];
+        }
+
+        var is_english = <boolean>workspace.getConfiguration().get('thiefBook.isEnglish');
+        return parseTxtToc(this.rawText, is_english);
+    }
+
+    /**
+     * 跳转到目录项所在页并返回该页内容
+     * @param offset 章节标题在全文中的字符偏移
+     */
+    async jumpToOffset(offset: number): Promise<string> {
+        this.init();
+
+        let text = await this.readFile();
+        if (!text) {
+            return "";
+        }
+
+        this.getSize(text);
+
+        var page = offsetToPage(offset, this.page_size!);
+        this.curr_page_number = page > this.page ? this.page : page;
+
         this.getStartEnd();
 
         var page_info = this.curr_page_number.toString() + "/" + this.page.toString();

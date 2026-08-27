@@ -14,6 +14,7 @@ const vscode_1 = require("vscode");
 const fs = require("fs");
 const path = require("path");
 const epubUtil_1 = require("./epubUtil");
+const tocParser_1 = require("./tocParser");
 class Book {
     constructor(extensionContext) {
         this.curr_page_number = 1;
@@ -23,6 +24,8 @@ class Book {
         this.end = this.page_size;
         this.filePath = "";
         this.cachedText = ""; // 缓存解析后的文本
+        this.rawText = ""; // TXT 原始文本（保留换行，供目录解析）
+        this.epubParser = null; // 缓存的 EPUB 解析器（供目录读取）
         this.fileType = null; // 文件类型
         this.extensionContext = extensionContext;
     }
@@ -100,8 +103,9 @@ class Book {
             return "";
         }
         var data = fs.readFileSync(this.filePath, 'utf-8');
+        this.rawText = data.toString();
         var line_break = vscode_1.workspace.getConfiguration().get('thiefBook.lineBreak');
-        return data.toString()
+        return this.rawText
             .replace(/\n/g, line_break)
             .replace(/\r/g, " ")
             .replace(/　　/g, " ")
@@ -123,6 +127,7 @@ class Book {
                 }
                 const parser = new epubUtil_1.EpubParser(this.filePath);
                 yield parser.init();
+                this.epubParser = parser;
                 const text = parser.getText();
                 // 处理换行符
                 var line_break = vscode_1.workspace.getConfiguration().get('thiefBook.lineBreak');
@@ -162,6 +167,8 @@ class Book {
         // 文件类型改变时清除缓存
         if (this.filePath !== newFilePath || this.fileType !== newFileType) {
             this.cachedText = "";
+            this.rawText = "";
+            this.epubParser = null;
         }
         this.filePath = newFilePath;
         this.fileType = newFileType;
@@ -212,6 +219,46 @@ class Book {
             }
             this.getSize(text);
             this.getPage("curr");
+            this.getStartEnd();
+            var page_info = this.curr_page_number.toString() + "/" + this.page.toString();
+            this.updatePage();
+            return text.substring(this.start, this.end) + "    " + page_info;
+        });
+    }
+    /**
+     * 获取目录（章节标题 + 偏移），TXT 与 EPUB 统一返回结构
+     */
+    getToc() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this.init();
+            if (!this.filePath) {
+                return [];
+            }
+            let text = yield this.readFile();
+            if (!text) {
+                return [];
+            }
+            if (this.fileType === 'epub') {
+                return this.epubParser ? this.epubParser.getToc() : [];
+            }
+            var is_english = vscode_1.workspace.getConfiguration().get('thiefBook.isEnglish');
+            return tocParser_1.parseTxtToc(this.rawText, is_english);
+        });
+    }
+    /**
+     * 跳转到目录项所在页并返回该页内容
+     * @param offset 章节标题在全文中的字符偏移
+     */
+    jumpToOffset(offset) {
+        return __awaiter(this, void 0, void 0, function* () {
+            this.init();
+            let text = yield this.readFile();
+            if (!text) {
+                return "";
+            }
+            this.getSize(text);
+            var page = tocParser_1.offsetToPage(offset, this.page_size);
+            this.curr_page_number = page > this.page ? this.page : page;
             this.getStartEnd();
             var page_info = this.curr_page_number.toString() + "/" + this.page.toString();
             this.updatePage();

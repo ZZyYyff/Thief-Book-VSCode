@@ -68,10 +68,41 @@ export function activate(context: ExtensionContext) {
 		}
 	});
 
+	// 查看目录
+	let showToc = commands.registerCommand('extension.showToc', async () => {
+		try {
+			let books = new book.Book(context);
+			const toc = await books.getToc();
+			if (!toc.length) {
+				window.showWarningMessage("未识别到章节目录 & No chapters found");
+				return;
+			}
+
+			const items = toc.map(entry => ({
+				label: entry.title,
+				description: `第${Math.floor(entry.offset / books.page_size!) + 1}页`,
+				offset: entry.offset
+			}));
+
+			const picked = await window.showQuickPick(items, {
+				placeHolder: "选择章节 & Select chapter"
+			});
+			if (!picked) {
+				return;
+			}
+
+			const content = await books.jumpToOffset(picked.offset);
+			window.setStatusBarMessage(content);
+		} catch (error) {
+			window.showErrorMessage(`读取失败: ${error}`);
+		}
+	});
+
 	context.subscriptions.push(displayCode);
 	context.subscriptions.push(getNextPage);
 	context.subscriptions.push(getPreviousPage);
 	context.subscriptions.push(getJumpingPage);
+	context.subscriptions.push(showToc);
 }
 
 // this method is called when your extension is deactivated
