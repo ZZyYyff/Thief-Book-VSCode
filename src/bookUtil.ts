@@ -2,7 +2,7 @@ import { ExtensionContext, workspace, window } from 'vscode';
 import * as fs from "fs";
 import * as path from "path";
 import { EpubParser } from './epubUtil';
-import { parseTxtToc, offsetToPage, mapOffsetsToProcessed, TocEntry } from './tocParser';
+import { parseTxtToc, offsetToPage, mapOffsetsToProcessed, getCurrentChapterTitle, TocEntry } from './tocParser';
 
 export class Book {
     curr_page_number: number = 1;
@@ -15,6 +15,7 @@ export class Book {
     private cachedText: string = ""; // 缓存解析后的文本
     private rawText: string = ""; // TXT 原始文本（保留换行，供目录解析）
     private epubParser: EpubParser | null = null; // 缓存的 EPUB 解析器（供目录读取）
+    private tocCache: TocEntry[] | null = null; // 缓存的目录（映射到显示文本空间）
     private fileType: 'txt' | 'epub' | null = null; // 文件类型
 
     constructor(extensionContext: ExtensionContext) {
@@ -174,6 +175,7 @@ export class Book {
             this.cachedText = "";
             this.rawText = "";
             this.epubParser = null;
+            this.tocCache = null;
         }
 
         this.filePath = newFilePath;
@@ -245,13 +247,17 @@ export class Book {
     }
 
     /**
-     * 获取目录（章节标题 + 偏移），TXT 与 EPUB 统一返回结构
+     * 获取目录（章节标题 + 偏移），TXT 与 EPUB 统一返回结构；结果缓存，翻页时复用
      */
     async getToc(): Promise<TocEntry[]> {
         this.init();
 
         if (!this.filePath) {
             return [];
+        }
+
+        if (this.tocCache) {
+            return this.tocCache;
         }
 
         let text = await this.readFile();
@@ -267,11 +273,32 @@ export class Book {
             if (!this.epubParser) {
                 return [];
             }
-            return mapOffsetsToProcessed(this.epubParser.getText(), line_break, this.epubParser.getToc());
+            this.tocCache = mapOffsetsToProcessed(this.epubParser.getText(), line_break, this.epubParser.getToc());
+        } else {
+            var is_english = <boolean>workspace.getConfiguration().get('thiefBook.isEnglish');
+            this.tocCache = mapOffsetsToProcessed(this.rawText, line_break, parseTxtToc(this.rawText, is_english));
         }
 
-        var is_english = <boolean>workspace.getConfiguration().get('thiefBook.isEnglish');
-        return mapOffsetsToProcessed(this.rawText, line_break, parseTxtToc(this.rawText, is_english));
+        return this.tocCache;
+    }
+
+    /**
+     * 当前阅读页对应的章节标题；未配置路径或无章节时返回空串
+     */
+    async getCurrentChapter(): Promise<string> {
+        this.init();
+
+        if (!this.filePath) {
+            return "";
+        }
+
+        const toc = await this.getToc();
+        if (!toc.length) {
+            return "";
+        }
+
+        var curr_page = <number>workspace.getConfiguration().get('thiefBook.currPageNumber', 1);
+        return getCurrentChapterTitle(toc, curr_page, this.page_size!);
     }
 
     /**

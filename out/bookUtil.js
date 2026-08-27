@@ -26,6 +26,7 @@ class Book {
         this.cachedText = ""; // 缓存解析后的文本
         this.rawText = ""; // TXT 原始文本（保留换行，供目录解析）
         this.epubParser = null; // 缓存的 EPUB 解析器（供目录读取）
+        this.tocCache = null; // 缓存的目录（映射到显示文本空间）
         this.fileType = null; // 文件类型
         this.extensionContext = extensionContext;
     }
@@ -169,6 +170,7 @@ class Book {
             this.cachedText = "";
             this.rawText = "";
             this.epubParser = null;
+            this.tocCache = null;
         }
         this.filePath = newFilePath;
         this.fileType = newFileType;
@@ -226,13 +228,16 @@ class Book {
         });
     }
     /**
-     * 获取目录（章节标题 + 偏移），TXT 与 EPUB 统一返回结构
+     * 获取目录（章节标题 + 偏移），TXT 与 EPUB 统一返回结构；结果缓存，翻页时复用
      */
     getToc() {
         return __awaiter(this, void 0, void 0, function* () {
             this.init();
             if (!this.filePath) {
                 return [];
+            }
+            if (this.tocCache) {
+                return this.tocCache;
             }
             let text = yield this.readFile();
             if (!text) {
@@ -245,10 +250,30 @@ class Book {
                 if (!this.epubParser) {
                     return [];
                 }
-                return tocParser_1.mapOffsetsToProcessed(this.epubParser.getText(), line_break, this.epubParser.getToc());
+                this.tocCache = tocParser_1.mapOffsetsToProcessed(this.epubParser.getText(), line_break, this.epubParser.getToc());
             }
-            var is_english = vscode_1.workspace.getConfiguration().get('thiefBook.isEnglish');
-            return tocParser_1.mapOffsetsToProcessed(this.rawText, line_break, tocParser_1.parseTxtToc(this.rawText, is_english));
+            else {
+                var is_english = vscode_1.workspace.getConfiguration().get('thiefBook.isEnglish');
+                this.tocCache = tocParser_1.mapOffsetsToProcessed(this.rawText, line_break, tocParser_1.parseTxtToc(this.rawText, is_english));
+            }
+            return this.tocCache;
+        });
+    }
+    /**
+     * 当前阅读页对应的章节标题；未配置路径或无章节时返回空串
+     */
+    getCurrentChapter() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this.init();
+            if (!this.filePath) {
+                return "";
+            }
+            const toc = yield this.getToc();
+            if (!toc.length) {
+                return "";
+            }
+            var curr_page = vscode_1.workspace.getConfiguration().get('thiefBook.currPageNumber', 1);
+            return tocParser_1.getCurrentChapterTitle(toc, curr_page, this.page_size);
         });
     }
     /**

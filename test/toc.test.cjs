@@ -12,7 +12,7 @@ function test(name, fn) {
 }
 
 async function run() {
-    const { parseTxtToc, offsetToPage, findActiveTocIndex, mapOffsetsToProcessed } = require('../out/tocParser.js');
+    const { parseTxtToc, offsetToPage, findActiveTocIndex, mapOffsetsToProcessed, getCurrentChapterTitle } = require('../out/tocParser.js');
     const { EpubParser } = require('../out/epubUtil.js');
 
     // ---------- TXT 目录解析 ----------
@@ -156,6 +156,19 @@ async function run() {
 
     await test('mapOffsetsToProcessed：空目录返回空', () => {
         assert.deepStrictEqual(mapOffsetsToProcessed('任意文本', ' ', []), []);
+    });
+
+    await test('getCurrentChapterTitle：当前页对应章节标题', () => {
+        const toc = [
+            { title: '第一章', offset: 0 },
+            { title: '第二章', offset: 50 },
+            { title: '第三章', offset: 100 },
+        ];
+        assert.strictEqual(getCurrentChapterTitle(toc, 1, 50), '第一章');
+        assert.strictEqual(getCurrentChapterTitle(toc, 2, 50), '第二章');
+        assert.strictEqual(getCurrentChapterTitle(toc, 3, 50), '第三章'); // 页首恰在章首
+        assert.strictEqual(getCurrentChapterTitle(toc, 99, 50), '第三章'); // 超出最后一章 → 最后一项
+        assert.strictEqual(getCurrentChapterTitle([], 1, 50), ''); // 空目录
     });
 
     // ---------- 汇总 ----------

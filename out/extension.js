@@ -21,16 +21,33 @@ function activate(context) {
     // Use the console to output diagnostic information (console.log) and errors (console.error)
     // This line of code will only be executed once when your extension is activated
     console.log('Congratulations, your extension "thief-book" is now active!');
-    // The command has been defined in the package.json file
-    // Now provide the implementation of the command with registerCommand
-    // The commandId parameter must match the command field in package.json
+    // 共享 Book 实例（目录/解析结果跨命令缓存）
+    const books = new book.Book(context);
+    // 常驻状态栏：显示当前阅读章节，点击打开目录
+    const chapterStatusBar = vscode_1.window.createStatusBarItem(vscode_1.StatusBarAlignment.Right, 100);
+    chapterStatusBar.text = "📖";
+    chapterStatusBar.tooltip = "当前章节，点击查看目录 & Current chapter, click to show toc";
+    chapterStatusBar.command = "extension.showToc";
+    chapterStatusBar.show();
+    context.subscriptions.push(chapterStatusBar);
+    function refreshChapterStatus() {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const chapter = yield books.getCurrentChapter();
+                chapterStatusBar.text = chapter ? `📖 ${chapter}` : "📖";
+            }
+            catch (error) {
+                chapterStatusBar.text = "📖";
+            }
+        });
+    }
     // 老板键
     let displayCode = vscode_1.commands.registerCommand('extension.displayCode', () => {
         let lauage_arr_list = [
             'Java - System.out.println("Hello World");',
             'C++ - cout << "Hello, world!" << endl;',
             'C - printf("Hello, World!");',
-            'Python - print("Hello, World!")',
+            'Python - print("Hello, World!");',
             'PHP - echo "Hello World!";',
             'Ruby - puts "Hello World!";',
             'Perl - print "Hello, World!";',
@@ -44,9 +61,9 @@ function activate(context) {
     // 下一页
     let getNextPage = vscode_1.commands.registerCommand('extension.getNextPage', () => __awaiter(this, void 0, void 0, function* () {
         try {
-            let books = new book.Book(context);
             const content = yield books.getNextPage();
             vscode_1.window.setStatusBarMessage(content);
+            refreshChapterStatus();
         }
         catch (error) {
             vscode_1.window.showErrorMessage(`读取失败: ${error}`);
@@ -55,9 +72,9 @@ function activate(context) {
     // 上一页
     let getPreviousPage = vscode_1.commands.registerCommand('extension.getPreviousPage', () => __awaiter(this, void 0, void 0, function* () {
         try {
-            let books = new book.Book(context);
             const content = yield books.getPreviousPage();
             vscode_1.window.setStatusBarMessage(content);
+            refreshChapterStatus();
         }
         catch (error) {
             vscode_1.window.showErrorMessage(`读取失败: ${error}`);
@@ -66,9 +83,9 @@ function activate(context) {
     // 跳转某个页面
     let getJumpingPage = vscode_1.commands.registerCommand('extension.getJumpingPage', () => __awaiter(this, void 0, void 0, function* () {
         try {
-            let books = new book.Book(context);
             const content = yield books.getJumpingPage();
             vscode_1.window.setStatusBarMessage(content);
+            refreshChapterStatus();
         }
         catch (error) {
             vscode_1.window.showErrorMessage(`读取失败: ${error}`);
@@ -77,7 +94,6 @@ function activate(context) {
     // 查看目录
     let showToc = vscode_1.commands.registerCommand('extension.showToc', () => __awaiter(this, void 0, void 0, function* () {
         try {
-            let books = new book.Book(context);
             const toc = yield books.getToc();
             if (!toc.length) {
                 vscode_1.window.showWarningMessage("未识别到章节目录 & No chapters found");
@@ -101,6 +117,7 @@ function activate(context) {
                     quickPick.hide();
                     const content = yield books.jumpToOffset(selected[0].offset);
                     vscode_1.window.setStatusBarMessage(content);
+                    refreshChapterStatus();
                 }
             }));
             quickPick.onDidHide(() => quickPick.dispose());

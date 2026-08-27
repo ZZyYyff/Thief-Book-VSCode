@@ -73,6 +73,17 @@ export function findActiveTocIndex(entries: TocEntry[], startChar: number): numb
 }
 
 /**
+ * 当前阅读页对应的章节标题；无目录或页号异常时返回空串
+ */
+export function getCurrentChapterTitle(entries: TocEntry[], currPage: number, pageSize: number): string {
+    if (!entries.length) {
+        return "";
+    }
+    const startChar = (currPage - 1) * pageSize;
+    return entries[findActiveTocIndex(entries, startChar)].title;
+}
+
+/**
  * 解析 TXT 文本中的章节目录
  * @param rawText 原始文本（保留换行结构，与页面显示用的压缩文本同源）
  * @param isEnglish 是否英文书

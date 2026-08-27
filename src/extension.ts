@@ -1,6 +1,6 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
-import { commands, ExtensionContext, QuickPickItem, window, workspace } from 'vscode';
+import { commands, ExtensionContext, QuickPickItem, StatusBarAlignment, window, workspace } from 'vscode';
 import * as book from './bookUtil';
 import { findActiveTocIndex } from './tocParser';
 
@@ -12,9 +12,25 @@ export function activate(context: ExtensionContext) {
 	// This line of code will only be executed once when your extension is activated
 	console.log('Congratulations, your extension "thief-book" is now active!');
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
+	// 共享 Book 实例（目录/解析结果跨命令缓存）
+	const books = new book.Book(context);
+
+	// 常驻状态栏：显示当前阅读章节，点击打开目录
+	const chapterStatusBar = window.createStatusBarItem(StatusBarAlignment.Right, 100);
+	chapterStatusBar.text = "📖";
+	chapterStatusBar.tooltip = "当前章节，点击查看目录 & Current chapter, click to show toc";
+	chapterStatusBar.command = "extension.showToc";
+	chapterStatusBar.show();
+	context.subscriptions.push(chapterStatusBar);
+
+	async function refreshChapterStatus() {
+		try {
+			const chapter = await books.getCurrentChapter();
+			chapterStatusBar.text = chapter ? `📖 ${chapter}` : "📖";
+		} catch (error) {
+			chapterStatusBar.text = "📖";
+		}
+	}
 
 	// 老板键
 	let displayCode = commands.registerCommand('extension.displayCode', () => {
@@ -23,7 +39,7 @@ export function activate(context: ExtensionContext) {
 			'Java - System.out.println("Hello World");',
 			'C++ - cout << "Hello, world!" << endl;',
 			'C - printf("Hello, World!");',
-			'Python - print("Hello, World!")',
+			'Python - print("Hello, World!");',
 			'PHP - echo "Hello World!";',
 			'Ruby - puts "Hello World!";',
 			'Perl - print "Hello, World!";',
@@ -39,9 +55,9 @@ export function activate(context: ExtensionContext) {
 	// 下一页
 	let getNextPage = commands.registerCommand('extension.getNextPage', async () => {
 		try {
-		let books = new book.Book(context);
 			const content = await books.getNextPage();
 			window.setStatusBarMessage(content);
+			refreshChapterStatus();
 		} catch (error) {
 			window.showErrorMessage(`读取失败: ${error}`);
 		}
@@ -50,9 +66,9 @@ export function activate(context: ExtensionContext) {
 	// 上一页
 	let getPreviousPage = commands.registerCommand('extension.getPreviousPage', async () => {
 		try {
-		let books = new book.Book(context);
 			const content = await books.getPreviousPage();
 			window.setStatusBarMessage(content);
+			refreshChapterStatus();
 		} catch (error) {
 			window.showErrorMessage(`读取失败: ${error}`);
 		}
@@ -61,9 +77,9 @@ export function activate(context: ExtensionContext) {
 	// 跳转某个页面
 	let getJumpingPage = commands.registerCommand('extension.getJumpingPage', async () => {
 		try {
-		let books = new book.Book(context);
 			const content = await books.getJumpingPage();
 			window.setStatusBarMessage(content);
+			refreshChapterStatus();
 		} catch (error) {
 			window.showErrorMessage(`读取失败: ${error}`);
 		}
@@ -72,7 +88,6 @@ export function activate(context: ExtensionContext) {
 	// 查看目录
 	let showToc = commands.registerCommand('extension.showToc', async () => {
 		try {
-			let books = new book.Book(context);
 			const toc = await books.getToc();
 			if (!toc.length) {
 				window.showWarningMessage("未识别到章节目录 & No chapters found");
@@ -100,6 +115,7 @@ export function activate(context: ExtensionContext) {
 					quickPick.hide();
 					const content = await books.jumpToOffset(selected[0].offset);
 					window.setStatusBarMessage(content);
+					refreshChapterStatus();
 				}
 			});
 			quickPick.onDidHide(() => quickPick.dispose());
