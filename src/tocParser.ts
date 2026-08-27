@@ -22,6 +22,43 @@ export function offsetToPage(offset: number, pageSize: number): number {
 }
 
 /**
+ * 将源码文本空间的目录偏移映射到"替换链处理后的显示文本"空间。
+ * 显示文本的生成规则（与 readTxtFile/readEpubFile 一致）：
+ *   \n → lineBreak；\r → " "；　　→ " "（每对全角空格缩 1 位）；其余 1:1
+ * @param source 源码文本（TXT 为 rawText，EPUB 为拼接文本）
+ * @param entries 升序排列的目录（原样返回新数组，标题不变）
+ */
+export function mapOffsetsToProcessed(source: string, lineBreak: string, entries: TocEntry[]): TocEntry[] {
+    if (!entries.length) {
+        return [];
+    }
+
+    const mapped: TocEntry[] = [];
+    let processed = 0;
+    let j = 0;
+
+    for (let i = 0; i <= source.length && j < entries.length; i++) {
+        if (i === entries[j].offset) {
+            mapped.push({ title: entries[j].title, offset: processed });
+            j++;
+        }
+        if (i < source.length) {
+            const ch = source[i];
+            if (ch === '\n') {
+                processed += lineBreak.length;
+            } else if (ch === '　' && source[i + 1] === '　') {
+                processed += 1;
+                i++; // 跳过全角空格对中的第二个字符
+            } else {
+                processed += 1;
+            }
+        }
+    }
+
+    return mapped;
+}
+
+/**
  * 根据当前阅读位置（页首字符偏移）找到应定位的目录项下标
  * 规则：取最后一个 offset 不超过 startChar 的章节；无匹配时返回 0
  */

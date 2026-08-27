@@ -2,7 +2,7 @@ import { ExtensionContext, workspace, window } from 'vscode';
 import * as fs from "fs";
 import * as path from "path";
 import { EpubParser } from './epubUtil';
-import { parseTxtToc, offsetToPage, TocEntry } from './tocParser';
+import { parseTxtToc, offsetToPage, mapOffsetsToProcessed, TocEntry } from './tocParser';
 
 export class Book {
     curr_page_number: number = 1;
@@ -259,12 +259,19 @@ export class Book {
             return [];
         }
 
+        // 把偏移映射到显示文本空间（处理链：\n→lineBreak、\r→" "、　　→" "），
+        // 否则全角空格缩位会让跳转位置随章节递增地偏后
+        var line_break = <string>workspace.getConfiguration().get('thiefBook.lineBreak');
+
         if (this.fileType === 'epub') {
-            return this.epubParser ? this.epubParser.getToc() : [];
+            if (!this.epubParser) {
+                return [];
+            }
+            return mapOffsetsToProcessed(this.epubParser.getText(), line_break, this.epubParser.getToc());
         }
 
         var is_english = <boolean>workspace.getConfiguration().get('thiefBook.isEnglish');
-        return parseTxtToc(this.rawText, is_english);
+        return mapOffsetsToProcessed(this.rawText, line_break, parseTxtToc(this.rawText, is_english));
     }
 
     /**

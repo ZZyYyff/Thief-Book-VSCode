@@ -12,7 +12,7 @@ function test(name, fn) {
 }
 
 async function run() {
-    const { parseTxtToc, offsetToPage, findActiveTocIndex } = require('../out/tocParser.js');
+    const { parseTxtToc, offsetToPage, findActiveTocIndex, mapOffsetsToProcessed } = require('../out/tocParser.js');
     const { EpubParser } = require('../out/epubUtil.js');
 
     // ---------- TXT 目录解析 ----------
@@ -124,6 +124,38 @@ async function run() {
         assert.strictEqual(findActiveTocIndex(toc, 150), 2);
         // 空目录安全返回 0
         assert.strictEqual(findActiveTocIndex([], 0), 0);
+    });
+
+    await test('mapOffsetsToProcessed：全角空格缩位后偏移映射', () => {
+        const source = '　　第一章\n正文。\n　　第二章\n内容。';
+        // 替换链：\n→" "、\r→" "、　　→" "
+        // 章1 行首 offset 0 → 0（不变）
+        // 章2 行首 raw offset 10 → processed offset 9（两处全角对共缩 2 位，但第2对在章2之后）
+        const mapped = mapOffsetsToProcessed(source, ' ', [
+            { title: '第一章', offset: 0 },
+            { title: '第二章', offset: 10 },
+        ]);
+        assert.deepStrictEqual(mapped, [
+            { title: '第一章', offset: 0 },
+            { title: '第二章', offset: 9 },
+        ]);
+    });
+
+    await test('mapOffsetsToProcessed：多字符换行分隔符', () => {
+        const source = '第一章\n第二章';
+        const mapped = mapOffsetsToProcessed(source, '  ', [
+            { title: '第一章', offset: 0 },
+            { title: '第二章', offset: 4 },
+        ]);
+        // 第一章(3) + \n→'  '(2) = 5
+        assert.deepStrictEqual(mapped, [
+            { title: '第一章', offset: 0 },
+            { title: '第二章', offset: 5 },
+        ]);
+    });
+
+    await test('mapOffsetsToProcessed：空目录返回空', () => {
+        assert.deepStrictEqual(mapOffsetsToProcessed('任意文本', ' ', []), []);
     });
 
     // ---------- 汇总 ----------

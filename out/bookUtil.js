@@ -238,11 +238,17 @@ class Book {
             if (!text) {
                 return [];
             }
+            // 把偏移映射到显示文本空间（处理链：\n→lineBreak、\r→" "、　　→" "），
+            // 否则全角空格缩位会让跳转位置随章节递增地偏后
+            var line_break = vscode_1.workspace.getConfiguration().get('thiefBook.lineBreak');
             if (this.fileType === 'epub') {
-                return this.epubParser ? this.epubParser.getToc() : [];
+                if (!this.epubParser) {
+                    return [];
+                }
+                return tocParser_1.mapOffsetsToProcessed(this.epubParser.getText(), line_break, this.epubParser.getToc());
             }
             var is_english = vscode_1.workspace.getConfiguration().get('thiefBook.isEnglish');
-            return tocParser_1.parseTxtToc(this.rawText, is_english);
+            return tocParser_1.mapOffsetsToProcessed(this.rawText, line_break, tocParser_1.parseTxtToc(this.rawText, is_english));
         });
     }
     /**
