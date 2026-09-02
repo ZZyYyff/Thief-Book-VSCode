@@ -1,8 +1,21 @@
-import { ExtensionContext, workspace, window } from 'vscode';
+import { ExtensionContext, workspace, window, OutputChannel } from 'vscode';
 import * as fs from "fs";
 import * as path from "path";
 import { EpubParser } from './epubUtil';
 import { parseTxtToc, offsetToPage, mapOffsetsToProcessed, getCurrentChapterTitle, TocEntry } from './tocParser';
+import { createDebounced } from './debounce';
+
+let outputChannel: OutputChannel | null = null;
+
+/**
+ * 输出到"Thief Book"日志频道（输出面板 Ctrl+Shift+U → 下拉选 Thief Book）
+ */
+export function tbLog(msg: string): void {
+    if (!outputChannel) {
+        outputChannel = window.createOutputChannel('Thief Book');
+    }
+    outputChannel.appendLine(msg);
+}
 
 export class Book {
     curr_page_number: number = 1;
@@ -18,6 +31,20 @@ export class Book {
     private epubParser: EpubParser | null = null; // 缓存的 EPUB 解析器（供目录读取）
     private tocCache: TocEntry[] | null = null; // 缓存的目录（映射到显示文本空间）
     private fileType: 'txt' | 'epub' | null = null; // 文件类型
+    // 防抖 3s 写全局配置：翻页只写内存，落盘合并为一次。
+    // 全局配置写要序列化整个 settings.json 并广播（单次实测可达 900ms），每页都写是间歇延迟的根因
+    private debouncedConfigWrite = createDebounced<number>((page) => {
+        var wp = Date.now();
+        var current = workspace.getConfiguration().get<number>('thiefBook.currPageNumber', 1);
+        // 用户已在设置里改过页号（如手动跳页）则跳过，避免覆盖用户意图
+        if (current === page) {
+            tbLog(`[tb-perf] config write skipped (unchanged): ${Date.now() - wp}ms`);
+            return;
+        }
+        workspace.getConfiguration().update('thiefBook.currPageNumber', page, true).then(
+            () => tbLog(`[tb-perf] config write done: ${Date.now() - wp}ms`),
+            (e) => tbLog(`[tb-perf] config write failed: ${e}`));
+    }, 3000);
 
     constructor(extensionContext: ExtensionContext) {
         this.extensionContext = extensionContext;
@@ -75,7 +102,7 @@ export class Book {
         //     }
         // }
 
-        workspace.getConfiguration().update('thiefBook.currPageNumber', this.curr_page_number, true);
+        this.debouncedConfigWrite(this.curr_page_number);
         // this.extensionContext.globalState.update("book_page_number", page);
     }
 
@@ -219,9 +246,12 @@ export class Book {
     }
 
     async getNextPage(): Promise<string> {
+        const t0 = Date.now();
         this.init();
+        tbLog(`[tb-perf] init: ${Date.now() - t0}ms`);
 
         let text = await this.readFile();
+        tbLog(`[tb-perf] readFile: ${Date.now() - t0}ms`);
         if (!text) {
             return "";
         }

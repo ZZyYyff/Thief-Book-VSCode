@@ -14,6 +14,7 @@ exports.deactivate = exports.activate = void 0;
 // Import the module and reference it with the alias vscode in your code below
 const vscode_1 = require("vscode");
 const book = require("./bookUtil");
+const bookUtil_1 = require("./bookUtil");
 const tocParser_1 = require("./tocParser");
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -21,6 +22,7 @@ function activate(context) {
     // Use the console to output diagnostic information (console.log) and errors (console.error)
     // This line of code will only be executed once when your extension is activated
     console.log('Congratulations, your extension "thief-book" is now active!');
+    bookUtil_1.tbLog('[tb-perf] 扩展激活，计时探针就绪');
     // 共享 Book 实例（目录/解析结果跨命令缓存）
     const books = new book.Book(context);
     // 常驻状态栏：显示当前阅读章节，点击打开目录
@@ -60,10 +62,12 @@ function activate(context) {
     });
     // 下一页
     let getNextPage = vscode_1.commands.registerCommand('extension.getNextPage', () => __awaiter(this, void 0, void 0, function* () {
+        const t0 = Date.now();
         try {
             const content = yield books.getNextPage();
+            bookUtil_1.tbLog(`[tb-perf] getNextPage 命令总耗时: ${Date.now() - t0}ms`);
             vscode_1.window.setStatusBarMessage(content);
-            refreshChapterStatus();
+            refreshChapterStatus().then(() => bookUtil_1.tbLog(`[tb-perf] refreshChapterStatus 完成: ${Date.now() - t0}ms`));
         }
         catch (error) {
             vscode_1.window.showErrorMessage(`读取失败: ${error}`);
@@ -71,10 +75,12 @@ function activate(context) {
     }));
     // 上一页
     let getPreviousPage = vscode_1.commands.registerCommand('extension.getPreviousPage', () => __awaiter(this, void 0, void 0, function* () {
+        const t0 = Date.now();
         try {
             const content = yield books.getPreviousPage();
+            bookUtil_1.tbLog(`[tb-perf] getPreviousPage 命令总耗时: ${Date.now() - t0}ms`);
             vscode_1.window.setStatusBarMessage(content);
-            refreshChapterStatus();
+            refreshChapterStatus().then(() => bookUtil_1.tbLog(`[tb-perf] refreshChapterStatus 完成: ${Date.now() - t0}ms`));
         }
         catch (error) {
             vscode_1.window.showErrorMessage(`读取失败: ${error}`);

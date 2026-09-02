@@ -14,6 +14,7 @@ function test(name, fn) {
 async function run() {
     const { parseTxtToc, offsetToPage, findActiveTocIndex, mapOffsetsToProcessed, getCurrentChapterTitle } = require('../out/tocParser.js');
     const { EpubParser } = require('../out/epubUtil.js');
+    const { createDebounced } = require('../out/debounce.js');
 
     // ---------- TXT 目录解析 ----------
     await test('中文：提取章节标题与偏移', () => {
@@ -106,6 +107,26 @@ async function run() {
         assert.strictEqual(offsetToPage(50, 50), 2);
         assert.strictEqual(offsetToPage(249, 50), 5);
         assert.strictEqual(offsetToPage(250, 50), 6);
+    });
+
+    await test('createDebounced：间隔内多次调用只执行最后一次', async () => {
+        const calls = [];
+        const deb = createDebounced((v) => calls.push(v), 30);
+        deb(1);
+        deb(2);
+        deb(3);
+        await new Promise(r => setTimeout(r, 80));
+        assert.deepStrictEqual(calls, [3]);
+    });
+
+    await test('createDebounced：超过间隔的调用各自执行', async () => {
+        const calls = [];
+        const deb = createDebounced((v) => calls.push(v), 20);
+        deb('a');
+        await new Promise(r => setTimeout(r, 50));
+        deb('b');
+        await new Promise(r => setTimeout(r, 50));
+        assert.deepStrictEqual(calls, ['a', 'b']);
     });
 
     await test('findActiveTocIndex：定位当前阅读所在章节', () => {

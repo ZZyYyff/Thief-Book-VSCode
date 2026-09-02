@@ -2,6 +2,7 @@
 // Import the module and reference it with the alias vscode in your code below
 import { commands, ExtensionContext, QuickPickItem, StatusBarAlignment, window, workspace } from 'vscode';
 import * as book from './bookUtil';
+import { tbLog } from './bookUtil';
 import { findActiveTocIndex } from './tocParser';
 
 // this method is called when your extension is activated
@@ -11,6 +12,7 @@ export function activate(context: ExtensionContext) {
 	// Use the console to output diagnostic information (console.log) and errors (console.error)
 	// This line of code will only be executed once when your extension is activated
 	console.log('Congratulations, your extension "thief-book" is now active!');
+	tbLog('[tb-perf] 扩展激活，计时探针就绪');
 
 	// 共享 Book 实例（目录/解析结果跨命令缓存）
 	const books = new book.Book(context);
@@ -54,10 +56,13 @@ export function activate(context: ExtensionContext) {
 
 	// 下一页
 	let getNextPage = commands.registerCommand('extension.getNextPage', async () => {
+		const t0 = Date.now();
 		try {
 			const content = await books.getNextPage();
+			tbLog(`[tb-perf] getNextPage 命令总耗时: ${Date.now() - t0}ms`);
 			window.setStatusBarMessage(content);
-			refreshChapterStatus();
+			refreshChapterStatus().then(() =>
+				tbLog(`[tb-perf] refreshChapterStatus 完成: ${Date.now() - t0}ms`));
 		} catch (error) {
 			window.showErrorMessage(`读取失败: ${error}`);
 		}
@@ -65,10 +70,13 @@ export function activate(context: ExtensionContext) {
 
 	// 上一页
 	let getPreviousPage = commands.registerCommand('extension.getPreviousPage', async () => {
+		const t0 = Date.now();
 		try {
 			const content = await books.getPreviousPage();
+			tbLog(`[tb-perf] getPreviousPage 命令总耗时: ${Date.now() - t0}ms`);
 			window.setStatusBarMessage(content);
-			refreshChapterStatus();
+			refreshChapterStatus().then(() =>
+				tbLog(`[tb-perf] refreshChapterStatus 完成: ${Date.now() - t0}ms`));
 		} catch (error) {
 			window.showErrorMessage(`读取失败: ${error}`);
 		}
