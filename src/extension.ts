@@ -59,11 +59,12 @@ export function activate(context: ExtensionContext) {
 		const t0 = Date.now();
 		try {
 			const content = await books.getNextPage();
-			tbLog(`[tb-perf] getNextPage 命令总耗时: ${Date.now() - t0}ms`);
 			window.setStatusBarMessage(content);
+			tbLog(`[tb-perf] 状态栏已显示页面内容（命令总耗时 ${Date.now() - t0}ms）`);
 			refreshChapterStatus().then(() =>
 				tbLog(`[tb-perf] refreshChapterStatus 完成: ${Date.now() - t0}ms`));
 		} catch (error) {
+			tbLog(`[tb-perf] 命令出错: ${error}`);
 			window.showErrorMessage(`读取失败: ${error}`);
 		}
 	});
@@ -73,22 +74,27 @@ export function activate(context: ExtensionContext) {
 		const t0 = Date.now();
 		try {
 			const content = await books.getPreviousPage();
-			tbLog(`[tb-perf] getPreviousPage 命令总耗时: ${Date.now() - t0}ms`);
 			window.setStatusBarMessage(content);
+			tbLog(`[tb-perf] 状态栏已显示页面内容（命令总耗时 ${Date.now() - t0}ms）`);
 			refreshChapterStatus().then(() =>
 				tbLog(`[tb-perf] refreshChapterStatus 完成: ${Date.now() - t0}ms`));
 		} catch (error) {
+			tbLog(`[tb-perf] 命令出错: ${error}`);
 			window.showErrorMessage(`读取失败: ${error}`);
 		}
 	});
 
 	// 跳转某个页面
 	let getJumpingPage = commands.registerCommand('extension.getJumpingPage', async () => {
+		const t0 = Date.now();
 		try {
 			const content = await books.getJumpingPage();
 			window.setStatusBarMessage(content);
-			refreshChapterStatus();
+			tbLog(`[tb-perf] 状态栏已显示页面内容（命令总耗时 ${Date.now() - t0}ms）`);
+			refreshChapterStatus().then(() =>
+				tbLog(`[tb-perf] refreshChapterStatus 完成: ${Date.now() - t0}ms`));
 		} catch (error) {
+			tbLog(`[tb-perf] 命令出错: ${error}`);
 			window.showErrorMessage(`读取失败: ${error}`);
 		}
 	});
@@ -123,7 +129,8 @@ export function activate(context: ExtensionContext) {
 					quickPick.hide();
 					const content = await books.jumpToOffset(selected[0].offset);
 					window.setStatusBarMessage(content);
-					refreshChapterStatus();
+					refreshChapterStatus().then(() =>
+						tbLog(`[tb-perf] refreshChapterStatus 完成（目录跳转后）`));
 				}
 			});
 			quickPick.onDidHide(() => quickPick.dispose());

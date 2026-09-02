@@ -2,6 +2,9 @@
 // 运行：tsc -p ./ && node test/toc.test.cjs
 const assert = require('assert');
 const JSZip = require('jszip');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const results = [];
 function test(name, fn) {
@@ -15,7 +18,7 @@ async function run() {
     const { parseTxtToc, offsetToPage, findActiveTocIndex, mapOffsetsToProcessed, getCurrentChapterTitle } = require('../out/tocParser.js');
     const { EpubParser } = require('../out/epubUtil.js');
     const { createDebounced } = require('../out/debounce.js');
-    const { resolveStartPage } = require('../out/progress.js');
+    const { resolveStartPage, createProgressStore } = require('../out/progress.js');
 
     // ---------- TXT 目录解析 ----------
     await test('中文：提取章节标题与偏移', () => {
@@ -199,6 +202,23 @@ async function run() {
         assert.strictEqual(resolveStartPage(0, 7), 7);      // 无效记录(0) → 配置
         assert.strictEqual(resolveStartPage(undefined, undefined), 1); // 都没有 → 1
         assert.strictEqual(resolveStartPage(undefined, 0), 1);
+    });
+
+    await test('progressStore: save 后 load 返回相同页号，无文件返回 null', async () => {
+        const f = path.join(os.tmpdir(), `tb-progress-${Date.now()}.json`);
+        const store = createProgressStore(f);
+        assert.strictEqual(store.load(), null); // 文件不存在
+        await store.save(42);
+        assert.strictEqual(store.load(), 42);
+        fs.unlinkSync(f);
+    });
+
+    await test('progressStore: 文件损坏时安全返回 null', async () => {
+        const f = path.join(os.tmpdir(), `tb-progress-bad-${Date.now()}.json`);
+        fs.writeFileSync(f, 'not-json');
+        const store = createProgressStore(f);
+        assert.strictEqual(store.load(), null);
+        fs.unlinkSync(f);
     });
 
     // ---------- 汇总 ----------

@@ -4,7 +4,7 @@ import * as path from "path";
 import { EpubParser } from './epubUtil';
 import { parseTxtToc, offsetToPage, mapOffsetsToProcessed, getCurrentChapterTitle, TocEntry } from './tocParser';
 import { createDebounced } from './debounce';
-import { resolveStartPage } from './progress';
+import { resolveStartPage, createProgressStore, ProgressStore } from './progress';
 
 let outputChannel: OutputChannel | null = null;
 
@@ -15,7 +15,8 @@ export function tbLog(msg: string): void {
     if (!outputChannel) {
         outputChannel = window.createOutputChannel('Thief Book');
     }
-    outputChannel.appendLine(msg);
+    const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    outputChannel.appendLine(`[${time}] ${msg}`);
 }
 
 export class Book {
@@ -33,18 +34,23 @@ export class Book {
     private tocCache: TocEntry[] | null = null; // 缓存的目录（映射到显示文本空间）
     private fileType: 'txt' | 'epub' | null = null; // 文件类型
     private progressLoaded: boolean = false; // 起始页号只从存储加载一次（之后以内存/翻页结果为准）
-    // 防抖 3s 写进度（globalState）：
-    // 全局配置写（settings.json 序列化 + 广播）单次实测 900ms+，即使合并仍会在写期间阻塞主进程；
-    // Memento 写快且零广播，进度存这里，settings.json 不再被扩展写入
+    private progressStore: ProgressStore;
+    // 防抖 3s 把页号写进扩展自己的小文件（globalStorage/progress.json）：
+    // 全局配置写/全局存储(Memento)都会触发 VS Code 存储层的重 I/O 并阻塞主进程
+    // （settings 序列化 900ms+、SQLite checkpoint 1.3s，期间按键/命令排队）——文件 I/O 绕开该路径
     private debouncedProgressWrite = createDebounced<number>((page) => {
         var wp = Date.now();
-        this.extensionContext.globalState.update('bookPageNumber', page).then(
-            () => tbLog(`[tb-perf] progress write done: ${Date.now() - wp}ms`),
+        this.progressStore.save(page).then(
+            () => {
+                tbLog(`[tb-perf] progress write done: ${Date.now() - wp}ms（页号 ${page} 已落盘到 progress.json）`);
+                tbLog(`[tb-perf] ------------ 进度写事件结束 ------------`);
+            },
             (e) => tbLog(`[tb-perf] progress write failed: ${e}`));
     }, 3000);
 
     constructor(extensionContext: ExtensionContext) {
         this.extensionContext = extensionContext;
+        this.progressStore = createProgressStore(path.join(extensionContext.globalStoragePath, 'progress.json'));
     }
 
     getSize(text: string) {
@@ -219,10 +225,10 @@ export class Book {
         this.filePath = newFilePath;
         this.fileType = newFileType;
 
-        // 本次会话第一次初始化时加载起始页号：进度记录(globalState)优先，其次配置，最后 1
+        // 本次会话第一次初始化时加载起始页号：进度文件优先，其次配置（旧版本遗留），最后 1
         if (!this.progressLoaded) {
             this.curr_page_number = resolveStartPage(
-                this.extensionContext.globalState.get<number>('bookPageNumber'),
+                this.progressStore.load(),
                 workspace.getConfiguration().get<number>('thiefBook.currPageNumber', 1));
             this.progressLoaded = true;
         }
@@ -237,10 +243,15 @@ export class Book {
     }
 
     async getPreviousPage(): Promise<string> {
+        const t0 = Date.now();
+        tbLog(`[tb-perf] ============ PreviousBook 开始 ============`);
         this.init();
+        tbLog(`[tb-perf] init: ${Date.now() - t0}ms`);
 
         let text = await this.readFile();
+        tbLog(`[tb-perf] readFile: ${Date.now() - t0}ms`);
         if (!text) {
+            tbLog(`[tb-perf] ============ PreviousBook 结束（空文本） ============`);
             return "";
         }
 
@@ -248,20 +259,29 @@ export class Book {
         this.getPage("previous");
         this.getStartEnd();
 
+        tbLog(`[tb-perf] 页码计算: 第${this.curr_page_number}/${this.page}页 start=${this.start} end=${this.end} (耗时 ${Date.now() - t0}ms)`);
+
         var page_info = this.curr_page_number.toString() + "/" + this.page.toString();
 
         this.updatePage();
-        return text.substring(this.start, this.end) + "    " + page_info;
+        tbLog(`[tb-perf] 进度落盘已防抖调度（3s 后合并写 progress.json）`);
+
+        var result = text.substring(this.start, this.end) + "    " + page_info;
+        tbLog(`[tb-perf] 取页文本完成，随附页码 ${page_info} (耗时 ${Date.now() - t0}ms)`);
+        tbLog(`[tb-perf] ============ PreviousBook 结束 ============`);
+        return result;
     }
 
     async getNextPage(): Promise<string> {
         const t0 = Date.now();
+        tbLog(`[tb-perf] ============ NextBook 开始 ============`);
         this.init();
         tbLog(`[tb-perf] init: ${Date.now() - t0}ms`);
 
         let text = await this.readFile();
         tbLog(`[tb-perf] readFile: ${Date.now() - t0}ms`);
         if (!text) {
+            tbLog(`[tb-perf] ============ NextBook 结束（空文本） ============`);
             return "";
         }
 
@@ -269,18 +289,29 @@ export class Book {
         this.getPage("next");
         this.getStartEnd();
 
+        tbLog(`[tb-perf] 页码计算: 第${this.curr_page_number}/${this.page}页 start=${this.start} end=${this.end} (耗时 ${Date.now() - t0}ms)`);
+
         var page_info = this.curr_page_number.toString() + "/" + this.page.toString();
 
         this.updatePage();
+        tbLog(`[tb-perf] 进度落盘已防抖调度（3s 后合并写 progress.json）`);
 
-        return text.substring(this.start, this.end) + "    " + page_info;
+        var result = text.substring(this.start, this.end) + "    " + page_info;
+        tbLog(`[tb-perf] 取页文本完成，随附页码 ${page_info} (耗时 ${Date.now() - t0}ms)`);
+        tbLog(`[tb-perf] ============ NextBook 结束 ============`);
+        return result;
     }
 
     async getJumpingPage(): Promise<string> {
+        const t0 = Date.now();
+        tbLog(`[tb-perf] ============ JumpingBook 开始 ============`);
         this.init();
+        tbLog(`[tb-perf] init: ${Date.now() - t0}ms`);
 
         let text = await this.readFile();
+        tbLog(`[tb-perf] readFile: ${Date.now() - t0}ms`);
         if (!text) {
+            tbLog(`[tb-perf] ============ JumpingBook 结束（空文本） ============`);
             return "";
         }
 
@@ -288,11 +319,17 @@ export class Book {
         this.getPage("curr");
         this.getStartEnd();
 
+        tbLog(`[tb-perf] 页码计算: 第${this.curr_page_number}/${this.page}页 start=${this.start} end=${this.end} (耗时 ${Date.now() - t0}ms)`);
+
         var page_info = this.curr_page_number.toString() + "/" + this.page.toString();
 
         this.updatePage();
+        tbLog(`[tb-perf] 进度落盘已防抖调度（3s 后合并写 progress.json）`);
 
-        return text.substring(this.start, this.end) + "    " + page_info;
+        var result = text.substring(this.start, this.end) + "    " + page_info;
+        tbLog(`[tb-perf] 取页文本完成，随附页码 ${page_info} (耗时 ${Date.now() - t0}ms)`);
+        tbLog(`[tb-perf] ============ JumpingBook 结束 ============`);
+        return result;
     }
 
     /**
@@ -354,10 +391,15 @@ export class Book {
      * @param offset 章节标题在全文中的字符偏移
      */
     async jumpToOffset(offset: number): Promise<string> {
+        const t0 = Date.now();
+        tbLog(`[tb-perf] ============ 目录跳转 开始（offset=${offset}） ============`);
         this.init();
+        tbLog(`[tb-perf] init: ${Date.now() - t0}ms`);
 
         let text = await this.readFile();
+        tbLog(`[tb-perf] readFile: ${Date.now() - t0}ms`);
         if (!text) {
+            tbLog(`[tb-perf] ============ 目录跳转 结束（空文本） ============`);
             return "";
         }
 
@@ -368,10 +410,16 @@ export class Book {
 
         this.getStartEnd();
 
+        tbLog(`[tb-perf] 页码计算: 第${this.curr_page_number}/${this.page}页 start=${this.start} end=${this.end} (耗时 ${Date.now() - t0}ms)`);
+
         var page_info = this.curr_page_number.toString() + "/" + this.page.toString();
 
         this.updatePage();
+        tbLog(`[tb-perf] 进度落盘已防抖调度（3s 后合并写 progress.json）`);
 
-        return text.substring(this.start, this.end) + "    " + page_info;
+        var result = text.substring(this.start, this.end) + "    " + page_info;
+        tbLog(`[tb-perf] 取页文本完成，随附页码 ${page_info} (耗时 ${Date.now() - t0}ms)`);
+        tbLog(`[tb-perf] ============ 目录跳转 结束 ============`);
+        return result;
     }
 }

@@ -65,11 +65,12 @@ function activate(context) {
         const t0 = Date.now();
         try {
             const content = yield books.getNextPage();
-            bookUtil_1.tbLog(`[tb-perf] getNextPage 命令总耗时: ${Date.now() - t0}ms`);
             vscode_1.window.setStatusBarMessage(content);
+            bookUtil_1.tbLog(`[tb-perf] 状态栏已显示页面内容（命令总耗时 ${Date.now() - t0}ms）`);
             refreshChapterStatus().then(() => bookUtil_1.tbLog(`[tb-perf] refreshChapterStatus 完成: ${Date.now() - t0}ms`));
         }
         catch (error) {
+            bookUtil_1.tbLog(`[tb-perf] 命令出错: ${error}`);
             vscode_1.window.showErrorMessage(`读取失败: ${error}`);
         }
     }));
@@ -78,22 +79,26 @@ function activate(context) {
         const t0 = Date.now();
         try {
             const content = yield books.getPreviousPage();
-            bookUtil_1.tbLog(`[tb-perf] getPreviousPage 命令总耗时: ${Date.now() - t0}ms`);
             vscode_1.window.setStatusBarMessage(content);
+            bookUtil_1.tbLog(`[tb-perf] 状态栏已显示页面内容（命令总耗时 ${Date.now() - t0}ms）`);
             refreshChapterStatus().then(() => bookUtil_1.tbLog(`[tb-perf] refreshChapterStatus 完成: ${Date.now() - t0}ms`));
         }
         catch (error) {
+            bookUtil_1.tbLog(`[tb-perf] 命令出错: ${error}`);
             vscode_1.window.showErrorMessage(`读取失败: ${error}`);
         }
     }));
     // 跳转某个页面
     let getJumpingPage = vscode_1.commands.registerCommand('extension.getJumpingPage', () => __awaiter(this, void 0, void 0, function* () {
+        const t0 = Date.now();
         try {
             const content = yield books.getJumpingPage();
             vscode_1.window.setStatusBarMessage(content);
-            refreshChapterStatus();
+            bookUtil_1.tbLog(`[tb-perf] 状态栏已显示页面内容（命令总耗时 ${Date.now() - t0}ms）`);
+            refreshChapterStatus().then(() => bookUtil_1.tbLog(`[tb-perf] refreshChapterStatus 完成: ${Date.now() - t0}ms`));
         }
         catch (error) {
+            bookUtil_1.tbLog(`[tb-perf] 命令出错: ${error}`);
             vscode_1.window.showErrorMessage(`读取失败: ${error}`);
         }
     }));
@@ -123,7 +128,7 @@ function activate(context) {
                     quickPick.hide();
                     const content = yield books.jumpToOffset(selected[0].offset);
                     vscode_1.window.setStatusBarMessage(content);
-                    refreshChapterStatus();
+                    refreshChapterStatus().then(() => bookUtil_1.tbLog(`[tb-perf] refreshChapterStatus 完成（目录跳转后）`));
                 }
             }));
             quickPick.onDidHide(() => quickPick.dispose());
