@@ -24,6 +24,7 @@ class Book {
         this.end = this.page_size;
         this.filePath = "";
         this.cachedText = ""; // 缓存解析后的文本
+        this.cachedLineBreak = ""; // 生成 cachedText 时用的分隔符（变化时需重建）
         this.rawText = ""; // TXT 原始文本（保留换行，供目录解析）
         this.epubParser = null; // 缓存的 EPUB 解析器（供目录读取）
         this.tocCache = null; // 缓存的目录（映射到显示文本空间）
@@ -103,14 +104,20 @@ class Book {
             vscode_1.window.showWarningMessage("请填写TXT格式的小说文件路径 & Please fill in the path of the TXT format novel file");
             return "";
         }
+        var line_break = vscode_1.workspace.getConfiguration().get('thiefBook.lineBreak');
+        // 缓存处理结果：全量读盘 + 4 次全文本替换是每次翻页延迟的主因，只在首次/分隔符变化时执行
+        if (this.cachedText && this.cachedLineBreak === line_break) {
+            return this.cachedText;
+        }
         var data = fs.readFileSync(this.filePath, 'utf-8');
         this.rawText = data.toString();
-        var line_break = vscode_1.workspace.getConfiguration().get('thiefBook.lineBreak');
-        return this.rawText
+        this.cachedText = this.rawText
             .replace(/\n/g, line_break)
             .replace(/\r/g, " ")
             .replace(/　　/g, " ")
             .replace(/ /g, " ");
+        this.cachedLineBreak = line_break;
+        return this.cachedText;
     }
     /**
      * 读取 EPUB 文件
@@ -168,6 +175,7 @@ class Book {
         // 文件类型改变时清除缓存
         if (this.filePath !== newFilePath || this.fileType !== newFileType) {
             this.cachedText = "";
+            this.cachedLineBreak = "";
             this.rawText = "";
             this.epubParser = null;
             this.tocCache = null;

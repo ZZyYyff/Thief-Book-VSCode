@@ -13,6 +13,7 @@ export class Book {
     filePath: string | undefined = "";
     extensionContext: ExtensionContext;
     private cachedText: string = ""; // 缓存解析后的文本
+    private cachedLineBreak: string = ""; // 生成 cachedText 时用的分隔符（变化时需重建）
     private rawText: string = ""; // TXT 原始文本（保留换行，供目录解析）
     private epubParser: EpubParser | null = null; // 缓存的 EPUB 解析器（供目录读取）
     private tocCache: TocEntry[] | null = null; // 缓存的目录（映射到显示文本空间）
@@ -103,15 +104,23 @@ export class Book {
             return "";
         }
 
-        var data = fs.readFileSync(this.filePath!, 'utf-8');
-        this.rawText = data.toString();
         var line_break = <string>workspace.getConfiguration().get('thiefBook.lineBreak');
 
-        return this.rawText
+        // 缓存处理结果：全量读盘 + 4 次全文本替换是每次翻页延迟的主因，只在首次/分隔符变化时执行
+        if (this.cachedText && this.cachedLineBreak === line_break) {
+            return this.cachedText;
+        }
+
+        var data = fs.readFileSync(this.filePath!, 'utf-8');
+        this.rawText = data.toString();
+        this.cachedText = this.rawText
             .replace(/\n/g, line_break)
             .replace(/\r/g, " ")
             .replace(/　　/g, " ")
             .replace(/ /g, " ");
+        this.cachedLineBreak = line_break;
+
+        return this.cachedText;
     }
 
     /**
@@ -173,6 +182,7 @@ export class Book {
         // 文件类型改变时清除缓存
         if (this.filePath !== newFilePath || this.fileType !== newFileType) {
             this.cachedText = "";
+            this.cachedLineBreak = "";
             this.rawText = "";
             this.epubParser = null;
             this.tocCache = null;
