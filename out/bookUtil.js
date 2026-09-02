@@ -16,6 +16,7 @@ const path = require("path");
 const epubUtil_1 = require("./epubUtil");
 const tocParser_1 = require("./tocParser");
 const debounce_1 = require("./debounce");
+const progress_1 = require("./progress");
 let outputChannel = null;
 /**
  * 输出到"Thief Book"日志频道（输出面板 Ctrl+Shift+U → 下拉选 Thief Book）
@@ -41,17 +42,13 @@ class Book {
         this.epubParser = null; // 缓存的 EPUB 解析器（供目录读取）
         this.tocCache = null; // 缓存的目录（映射到显示文本空间）
         this.fileType = null; // 文件类型
-        // 防抖 3s 写全局配置：翻页只写内存，落盘合并为一次。
-        // 全局配置写要序列化整个 settings.json 并广播（单次实测可达 900ms），每页都写是间歇延迟的根因
-        this.debouncedConfigWrite = debounce_1.createDebounced((page) => {
+        this.progressLoaded = false; // 起始页号只从存储加载一次（之后以内存/翻页结果为准）
+        // 防抖 3s 写进度（globalState）：
+        // 全局配置写（settings.json 序列化 + 广播）单次实测 900ms+，即使合并仍会在写期间阻塞主进程；
+        // Memento 写快且零广播，进度存这里，settings.json 不再被扩展写入
+        this.debouncedProgressWrite = debounce_1.createDebounced((page) => {
             var wp = Date.now();
-            var current = vscode_1.workspace.getConfiguration().get('thiefBook.currPageNumber', 1);
-            // 用户已在设置里改过页号（如手动跳页）则跳过，避免覆盖用户意图
-            if (current === page) {
-                tbLog(`[tb-perf] config write skipped (unchanged): ${Date.now() - wp}ms`);
-                return;
-            }
-            vscode_1.workspace.getConfiguration().update('thiefBook.currPageNumber', page, true).then(() => tbLog(`[tb-perf] config write done: ${Date.now() - wp}ms`), (e) => tbLog(`[tb-perf] config write failed: ${e}`));
+            this.extensionContext.globalState.update('bookPageNumber', page).then(() => tbLog(`[tb-perf] progress write done: ${Date.now() - wp}ms`), (e) => tbLog(`[tb-perf] progress write failed: ${e}`));
         }, 3000);
         this.extensionContext = extensionContext;
     }
@@ -64,7 +61,14 @@ class Book {
         console.log(file_name);
     }
     getPage(type) {
-        var curr_page = vscode_1.workspace.getConfiguration().get('thiefBook.currPageNumber');
+        // 翻页用内存页号（进度实时在内存）；仅跳页("curr")读配置——用户手动改设置后执行跳转
+        var curr_page;
+        if (type === "curr") {
+            curr_page = (vscode_1.workspace.getConfiguration().get('thiefBook.currPageNumber') || 1);
+        }
+        else {
+            curr_page = this.curr_page_number;
+        }
         var page = 0;
         if (type === "previous") {
             if (curr_page <= 1) {
@@ -86,7 +90,6 @@ class Book {
             page = curr_page;
         }
         this.curr_page_number = page;
-        // this.curr_page_number = this.extensionContext.globalState.get("book_page_number", 1);
     }
     updatePage() {
         // var page = 0;
@@ -103,8 +106,7 @@ class Book {
         //         page = this.curr_page_number! + 1;
         //     }
         // }
-        this.debouncedConfigWrite(this.curr_page_number);
-        // this.extensionContext.globalState.update("book_page_number", page);
+        this.debouncedProgressWrite(this.curr_page_number);
     }
     getStartEnd() {
         this.start = this.curr_page_number * this.page_size;
@@ -206,6 +208,11 @@ class Book {
         }
         this.filePath = newFilePath;
         this.fileType = newFileType;
+        // 本次会话第一次初始化时加载起始页号：进度记录(globalState)优先，其次配置，最后 1
+        if (!this.progressLoaded) {
+            this.curr_page_number = progress_1.resolveStartPage(this.extensionContext.globalState.get('bookPageNumber'), vscode_1.workspace.getConfiguration().get('thiefBook.currPageNumber', 1));
+            this.progressLoaded = true;
+        }
         var is_english = vscode_1.workspace.getConfiguration().get('thiefBook.isEnglish');
         if (is_english === true) {
             this.page_size = vscode_1.workspace.getConfiguration().get('thiefBook.pageSize') * 2;
@@ -307,8 +314,7 @@ class Book {
             if (!toc.length) {
                 return "";
             }
-            var curr_page = vscode_1.workspace.getConfiguration().get('thiefBook.currPageNumber', 1);
-            return tocParser_1.getCurrentChapterTitle(toc, curr_page, this.page_size);
+            return tocParser_1.getCurrentChapterTitle(toc, this.curr_page_number, this.page_size);
         });
     }
     /**

@@ -15,6 +15,7 @@ async function run() {
     const { parseTxtToc, offsetToPage, findActiveTocIndex, mapOffsetsToProcessed, getCurrentChapterTitle } = require('../out/tocParser.js');
     const { EpubParser } = require('../out/epubUtil.js');
     const { createDebounced } = require('../out/debounce.js');
+    const { resolveStartPage } = require('../out/progress.js');
 
     // ---------- TXT 目录解析 ----------
     await test('中文：提取章节标题与偏移', () => {
@@ -190,6 +191,14 @@ async function run() {
         assert.strictEqual(getCurrentChapterTitle(toc, 3, 50), '第三章'); // 页首恰在章首
         assert.strictEqual(getCurrentChapterTitle(toc, 99, 50), '第三章'); // 超出最后一章 → 最后一项
         assert.strictEqual(getCurrentChapterTitle([], 1, 50), ''); // 空目录
+    });
+
+    await test('resolveStartPage：优先进度记录，fallback 配置，默认 1', () => {
+        assert.strictEqual(resolveStartPage(42, 7), 42);   // 有进度记录
+        assert.strictEqual(resolveStartPage(undefined, 7), 7); // 无记录 → 配置
+        assert.strictEqual(resolveStartPage(0, 7), 7);      // 无效记录(0) → 配置
+        assert.strictEqual(resolveStartPage(undefined, undefined), 1); // 都没有 → 1
+        assert.strictEqual(resolveStartPage(undefined, 0), 1);
     });
 
     // ---------- 汇总 ----------

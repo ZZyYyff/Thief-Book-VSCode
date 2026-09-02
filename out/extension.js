@@ -111,7 +111,7 @@ function activate(context) {
                 offset: entry.offset
             }));
             // 定位到当前阅读所在章节
-            const currPage = vscode_1.workspace.getConfiguration().get('thiefBook.currPageNumber', 1);
+            const currPage = books.curr_page_number;
             const startChar = (currPage - 1) * books.page_size;
             const activeIndex = tocParser_1.findActiveTocIndex(toc, startChar);
             const quickPick = vscode_1.window.createQuickPick();

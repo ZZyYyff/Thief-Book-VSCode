@@ -109,7 +109,7 @@ export function activate(context: ExtensionContext) {
 			}));
 
 			// 定位到当前阅读所在章节
-			const currPage = <number>workspace.getConfiguration().get('thiefBook.currPageNumber', 1);
+			const currPage = books.curr_page_number;
 			const startChar = (currPage - 1) * books.page_size!;
 			const activeIndex = findActiveTocIndex(toc, startChar);
 

@@ -4,6 +4,7 @@ import * as path from "path";
 import { EpubParser } from './epubUtil';
 import { parseTxtToc, offsetToPage, mapOffsetsToProcessed, getCurrentChapterTitle, TocEntry } from './tocParser';
 import { createDebounced } from './debounce';
+import { resolveStartPage } from './progress';
 
 let outputChannel: OutputChannel | null = null;
 
@@ -31,19 +32,15 @@ export class Book {
     private epubParser: EpubParser | null = null; // 缓存的 EPUB 解析器（供目录读取）
     private tocCache: TocEntry[] | null = null; // 缓存的目录（映射到显示文本空间）
     private fileType: 'txt' | 'epub' | null = null; // 文件类型
-    // 防抖 3s 写全局配置：翻页只写内存，落盘合并为一次。
-    // 全局配置写要序列化整个 settings.json 并广播（单次实测可达 900ms），每页都写是间歇延迟的根因
-    private debouncedConfigWrite = createDebounced<number>((page) => {
+    private progressLoaded: boolean = false; // 起始页号只从存储加载一次（之后以内存/翻页结果为准）
+    // 防抖 3s 写进度（globalState）：
+    // 全局配置写（settings.json 序列化 + 广播）单次实测 900ms+，即使合并仍会在写期间阻塞主进程；
+    // Memento 写快且零广播，进度存这里，settings.json 不再被扩展写入
+    private debouncedProgressWrite = createDebounced<number>((page) => {
         var wp = Date.now();
-        var current = workspace.getConfiguration().get<number>('thiefBook.currPageNumber', 1);
-        // 用户已在设置里改过页号（如手动跳页）则跳过，避免覆盖用户意图
-        if (current === page) {
-            tbLog(`[tb-perf] config write skipped (unchanged): ${Date.now() - wp}ms`);
-            return;
-        }
-        workspace.getConfiguration().update('thiefBook.currPageNumber', page, true).then(
-            () => tbLog(`[tb-perf] config write done: ${Date.now() - wp}ms`),
-            (e) => tbLog(`[tb-perf] config write failed: ${e}`));
+        this.extensionContext.globalState.update('bookPageNumber', page).then(
+            () => tbLog(`[tb-perf] progress write done: ${Date.now() - wp}ms`),
+            (e) => tbLog(`[tb-perf] progress write failed: ${e}`));
     }, 3000);
 
     constructor(extensionContext: ExtensionContext) {
@@ -62,7 +59,13 @@ export class Book {
 
     getPage(type: string) {
 
-        var curr_page = <number>workspace.getConfiguration().get('thiefBook.currPageNumber');
+        // 翻页用内存页号（进度实时在内存）；仅跳页("curr")读配置——用户手动改设置后执行跳转
+        var curr_page: number;
+        if (type === "curr") {
+            curr_page = <number>(workspace.getConfiguration().get('thiefBook.currPageNumber') || 1);
+        } else {
+            curr_page = this.curr_page_number;
+        }
         var page = 0;
 
         if (type === "previous") {
@@ -82,7 +85,6 @@ export class Book {
         }
 
         this.curr_page_number = page;
-        // this.curr_page_number = this.extensionContext.globalState.get("book_page_number", 1);
     }
 
     updatePage() {
@@ -102,8 +104,7 @@ export class Book {
         //     }
         // }
 
-        this.debouncedConfigWrite(this.curr_page_number);
-        // this.extensionContext.globalState.update("book_page_number", page);
+        this.debouncedProgressWrite(this.curr_page_number);
     }
 
     getStartEnd() {
@@ -217,7 +218,15 @@ export class Book {
 
         this.filePath = newFilePath;
         this.fileType = newFileType;
-        
+
+        // 本次会话第一次初始化时加载起始页号：进度记录(globalState)优先，其次配置，最后 1
+        if (!this.progressLoaded) {
+            this.curr_page_number = resolveStartPage(
+                this.extensionContext.globalState.get<number>('bookPageNumber'),
+                workspace.getConfiguration().get<number>('thiefBook.currPageNumber', 1));
+            this.progressLoaded = true;
+        }
+
         var is_english = <boolean>workspace.getConfiguration().get('thiefBook.isEnglish');
 
         if (is_english === true) {
@@ -337,8 +346,7 @@ export class Book {
             return "";
         }
 
-        var curr_page = <number>workspace.getConfiguration().get('thiefBook.currPageNumber', 1);
-        return getCurrentChapterTitle(toc, curr_page, this.page_size!);
+        return getCurrentChapterTitle(toc, this.curr_page_number, this.page_size!);
     }
 
     /**
